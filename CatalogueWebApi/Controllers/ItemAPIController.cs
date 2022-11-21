@@ -228,6 +228,48 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
         }
 
+        [HttpPatch("AddQuantity/id")]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> AddQuintity(int id, int AddBy)
+        {
+            if (AddBy <= 0)
+            {
+                return BadRequest($"Parameter AddBy = {AddBy} should be > 0");
+            }
+            var ItemToUpdate = await _context.Items.FindAsync(id);
+            if (ItemToUpdate == null)
+            {
+                return NotFound();
+            }
+            ItemToUpdate.Quantity += AddBy;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [HttpPatch("ReduceQuantity/id")]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> ReduceQuantity(int id, int ReduceBy)
+        {
+            if (ReduceBy <= 0)
+            {
+                return BadRequest($"Parameter ReduceBy = {ReduceBy} should be > 0");
+            }
+            var ItemToUpdate = await _context.Items.FindAsync(id);
+            if (ItemToUpdate == null)
+            {
+                return NotFound();
+            }
+            if (ItemToUpdate.Quantity - ReduceBy >= 0)
+            {
+                ItemToUpdate.Quantity -= ReduceBy;
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                return Conflict($"Parameter ReduceBy = {ReduceBy} is too high, there is only {ItemToUpdate.Quantity} items in stock");
+            }
+            return NoContent();
+        }
 
 
 
