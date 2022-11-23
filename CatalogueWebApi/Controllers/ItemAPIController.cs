@@ -3,7 +3,9 @@ using CatalogueWebApi.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
+using System.Reflection.Metadata.Ecma335;
 using System.Text.Json.Serialization;
 
 namespace CatalogueWebApi.Controllers
@@ -27,7 +29,6 @@ namespace CatalogueWebApi.Controllers
 
         //странно получилось - фильтрую по одной категории, пагинации нет
         [HttpGet("FilterField,FilterFieldValue")]
-        
         public async Task<IEnumerable<Item>> GetFiltered(string FilterField, string? FilterValue)
         {   IEnumerable<Item> Items = null;
             //выборка
@@ -51,17 +52,7 @@ namespace CatalogueWebApi.Controllers
                     Items = await _context.Items.ToListAsync();
                     break;
             };
-            //сортировка
-
-
-
             return Items.ToList(); ;
-            /*if (FilterField == "Category") { Items = await _context.Items.Where(x => x.CategoryName == FilterValue).ToListAsync(); }
-            else if (FilterField == "Brand") { Items = await _context.Items.Where(x => x.BrandName == FilterValue).ToListAsync(); } */
-            
-            
-            
-
         }
     
 
@@ -74,6 +65,7 @@ namespace CatalogueWebApi.Controllers
             var Item = await _context.Items.FindAsync(id);
             return Item == null ? NotFound() : Ok(Item);
         }
+
 
         //Post
         [HttpPost]
@@ -132,8 +124,6 @@ namespace CatalogueWebApi.Controllers
         }
 
         //функции на изменение одного поля - ругается на идентичные маршруты для ендпоинтов патч.
-
-
         [HttpPatch("UpdateName/id")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> UpdateName(int id, String NewName)
@@ -148,10 +138,15 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
         }
         
+
         [HttpPatch("UpdatePrice/id")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> UpdatePrice(int id, int NewPrice)
         {
+            if (NewPrice < 0)
+            {
+                return BadRequest($"Parameter NewPrice={NewPrice} should be >0");
+            }
             var ItemToUpdate = await _context.Items.FindAsync(id);
             if (ItemToUpdate == null)
             {
@@ -162,6 +157,7 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
         }
         
+
         [HttpPatch("UpdateDescription/id")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> UpdateDescription(int id, String NewDescription)
@@ -175,6 +171,7 @@ namespace CatalogueWebApi.Controllers
             await _context.SaveChangesAsync();
             return NoContent();
         }
+
 
         [HttpPatch("Update/BrandName")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -195,6 +192,7 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
         }
 
+
         [HttpPatch("Update/CategoryName")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> UpdateCategoryName(int id, string NewCategoryName)
@@ -214,6 +212,7 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
         }
 
+
         [HttpPatch("UpdateImageURL/id")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult> UpdateImageURL(int id, String NewImageURL)
@@ -228,6 +227,50 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
         }
 
+
+        [HttpPatch("AddQuantity/id")]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> AddQuintity(int id, int AddBy)
+        {
+            if (AddBy <= 0)
+            {
+                return BadRequest($"Parameter AddBy = {AddBy} should be > 0");
+            }
+            var ItemToUpdate = await _context.Items.FindAsync(id);
+            if (ItemToUpdate == null)
+            {
+                return NotFound();
+            }
+            ItemToUpdate.Quantity += AddBy;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+
+        [HttpPatch("ReduceQuantity/id")]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult> ReduceQuantity(int id, int ReduceBy)
+        {
+            if (ReduceBy <= 0)
+            {
+                return BadRequest($"Parameter ReduceBy = {ReduceBy} should be > 0");
+            }
+            var ItemToUpdate = await _context.Items.FindAsync(id);
+            if (ItemToUpdate == null)
+            {
+                return NotFound();
+            }
+            if (ItemToUpdate.Quantity - ReduceBy >= 0)
+            {
+                ItemToUpdate.Quantity -= ReduceBy;
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                return Conflict($"Parameter ReduceBy = {ReduceBy} is too high, there is only {ItemToUpdate.Quantity} items in stock");
+            }
+            return NoContent();
+        }
 
 
 
@@ -245,6 +288,37 @@ namespace CatalogueWebApi.Controllers
             _context.Items.Remove(ItemToDelete);
             await _context.SaveChangesAsync();
             return NoContent();
+        }
+        
+
+        //Запрос для проверки наличия n-ного количества айтемов в магазине и уменшения их к-ва
+        //Принимает список из айтемов (класс OrderItemDto взят из OrderApi)
+        //Если результат проверки положителен - к-во айтемов в магазине уменьшается, возвращается ok
+        //Если нет - возвращается список айтемов и сколько каждого есть в магазине - пусть меняют запрос
+        [HttpPost("CheckItemQuantity")]
+        public async Task<IActionResult> CheckItemQuantity(IEnumerable<OrderItemDTO> CheckItems)
+        {
+            List<OrderItemDTO> ResponceItems = new List<OrderItemDTO>();
+            foreach (OrderItemDTO CheckItem in CheckItems)
+            {
+                var Item = await _context.Items.FindAsync(CheckItem.ItemId);
+                int MagQuaintiy = Item.Quantity;
+                if (CheckItem.Quantity > MagQuaintiy)
+                {
+                    ResponceItems.Add(new OrderItemDTO() { ItemId = CheckItem.ItemId, Quantity = Item.Quantity });
+                }
+            }
+            // Если хотябы 1 айтем не прошел проверку - возвращаем его id и к-во в каталоге
+            if (ResponceItems.Count != 0)
+            {
+                return Conflict(ResponceItems);
+            }
+            // иначе - уменьшение к-ва айтемов в каталоге
+            foreach (OrderItemDTO CheckItem in CheckItems)
+            {
+                await ReduceQuantity(CheckItem.ItemId, CheckItem.Quantity);
+            }
+            return Ok(); 
         }
 
     }
