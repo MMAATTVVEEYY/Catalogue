@@ -59,7 +59,7 @@ namespace CatalogueWebApi.Controllers
             return NoContent();
 
         }
-
+        
         //Put
         [HttpPut("OldName,NewName")]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
